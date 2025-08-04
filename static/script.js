@@ -1,61 +1,95 @@
-// Đợi cho toàn bộ nội dung trang web được tải xong rồi mới chạy code
-document.addEventListener('DOMContentLoaded', () => {
-    // Lấy các phần tử trên trang web bằng ID của chúng
-    const imageInput = document.getElementById('imageInput');
-    const analyzeButton = document.getElementById('analyzeButton');
-    const previewImage = document.getElementById('previewImage');
-    const resultsDiv = document.getElementById('results');
+// Import các công cụ cần thiết từ thư viện MediaPipe
+import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.js";
 
-    let selectedFile; // Biến để lưu file ảnh người dùng đã chọn
+// Lấy các phần tử HTML
+const imageInput = document.getElementById('imageInput');
+const analyzeButton = document.getElementById('analyzeButton');
+const previewImage = document.getElementById('previewImage');
+const resultsDiv = document.getElementById('results');
 
-    // Xử lý sự kiện khi người dùng chọn một file ảnh
-    imageInput.addEventListener('change', (event) => {
-        selectedFile = event.target.files[0];
-        if (selectedFile) {
-            // Hiển thị ảnh xem trước
-            previewImage.src = URL.createObjectURL(selectedFile);
-            previewImage.style.display = 'block'; // Đảm bảo ảnh hiển thị
-        }
+let poseLandmarker;
+let selectedFile;
+
+// Hàm khởi tạo mô hình AI
+async function createPoseLandmarker() {
+    const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
+    poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+        baseOptions: {
+            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
+            delegate: "GPU"
+        },
+        runningMode: "IMAGE",
+        numPoses: 1
     });
+    analyzeButton.disabled = false;
+    analyzeButton.textContent = "Phân Tích";
+    console.log("Pose Landmarker is ready.");
+}
 
-    // Xử lý sự kiện khi người dùng nhấn nút "Phân Tích"
-    analyzeButton.addEventListener('click', () => {
-        // Kiểm tra xem đã chọn file chưa
-        if (!selectedFile) {
-            alert('Vui lòng chọn một ảnh để phân tích!');
-            return;
-        }
+// Chạy hàm khởi tạo
+analyzeButton.disabled = true;
+analyzeButton.textContent = "Đang tải mô hình AI...";
+createPoseLandmarker();
 
-        // Hiển thị thông báo đang xử lý
-        resultsDiv.innerHTML = '<p>Đang phân tích, vui lòng chờ...</p>';
+// Xử lý khi người dùng chọn ảnh
+imageInput.addEventListener('change', (event) => {
+    selectedFile = event.target.files[0];
+    if (selectedFile) {
+        previewImage.src = URL.createObjectURL(selectedFile);
+    }
+});
+
+// Hàm tính góc
+function calculateAngle(a, b, c) {
+    const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+    let angle = Math.abs(radians * 180.0 / Math.PI);
+    if (angle > 180.0) {
+        angle = 360 - angle;
+    }
+    return angle;
+}
+
+// Xử lý khi nhấn nút Phân Tích
+analyzeButton.addEventListener('click', async () => {
+    if (!selectedFile || !poseLandmarker) {
+        alert("Vui lòng chọn ảnh hoặc chờ mô hình AI tải xong!");
+        return;
+    }
+
+    resultsDiv.innerHTML = "<p>Đang phân tích, vui lòng chờ...</p>";
+
+    // Chạy phân tích
+    const landmarks = poseLandmarker.detect(previewImage);
+    const errors = [];
+
+    if (landmarks.landmarks.length > 0) {
+        const pose = landmarks.landmarks[0];
+
+        // Lấy tọa độ các khớp quan trọng
+        const rightHip = pose[24];
+        const rightKnee = pose[26];
+        const rightAnkle = pose[28];
         
-        // Tạo một đối tượng FormData để gửi file đi
-        const formData = new FormData();
-        formData.append('file', selectedFile);
+        // Tính toán góc
+        const kneeAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
+        
+        // Logic phân tích lỗi
+        if (kneeAngle > 160) {
+            errors.push(`Cảnh báo: Đầu gối duỗi quá thẳng (${Math.round(kneeAngle)}°). Nguy cơ chấn thương dây chằng.`);
+        } else if (kneeAngle < 90) {
+            errors.push(`Lỗi: Đầu gối gập quá sâu (${Math.round(kneeAngle)}°). Gây áp lực lên khớp gối.`);
+        }
 
-        // Gửi yêu cầu đến API của backend (Flask)
-        fetch('/api/analyze_image', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json()) // Chuyển đổi phản hồi thành dạng JSON
-        .then(data => {
-            // Hiển thị kết quả trả về từ backend
-            if (data.errors) {
-                let htmlResult = '<ul>';
-                data.errors.forEach(error => {
-                    htmlResult += `<li>${error}</li>`;
-                });
-                htmlResult += '</ul>';
-                resultsDiv.innerHTML = htmlResult;
-            } else {
-                resultsDiv.innerHTML = '<p>Có lỗi xảy ra trong quá trình phân tích.</p>';
-            }
-        })
-        .catch(error => {
-            // Xử lý nếu có lỗi mạng
-            console.error('Lỗi:', error);
-            resultsDiv.innerHTML = '<p>Không thể kết nối đến máy chủ phân tích. Hãy đảm bảo bạn đã chạy file app.py.</p>';
-        });
-    });
+        if (errors.length === 0) {
+            errors.push("Tư thế tốt, không phát hiện lỗi ở đầu gối.");
+        }
+    } else {
+        errors.push("Không thể nhận diện được tư thế trong ảnh.");
+    }
+
+    // Hiển thị kết quả
+    let htmlResult = '<ul>';
+    errors.forEach(error => { htmlResult += `<li>${error}</li>`; });
+    htmlResult += '</ul>';
+    resultsDiv.innerHTML = htmlResult;
 });
