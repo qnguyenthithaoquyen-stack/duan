@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phân Tích Tư Thế VĐV</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    
+    <h1>Hệ Thống Phân Tích Tư Thể & Cảnh Báo Chấn Thương</h1>
+
+    <div class="container">
+        <div class="upload-section">
+            <h3>1. Tải Lên Ảnh Tập Luyện</h3>
+            <input type="file" id="imageInput" accept="image/*">
+            <button id="analyzeButton">Phân Tích</button>
+        </div>
+
+        <div class="results-section">
+            <div class="image-display">
+                <h3>Ảnh Xem Trước</h3>
+                <img id="previewImage" src="" alt="Vui lòng chọn ảnh để xem trước">
+            </div>
+            <div class="analysis-results">
+                <h3>2. Kết Quả Phân Tích</h3>
+                <div id="results">
+                    <p>Kết quả phân tích sẽ hiển thị ở đây...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
